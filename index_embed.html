@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Mapa Score (Embed)</title>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+
+  <style>
+    body { margin:0; font-family: Arial, sans-serif; }
+    #wrap { display:flex; height:100vh; }
+    #sidebar {
+      width: 380px; padding: 14px; box-sizing: border-box;
+      border-right: 1px solid #ddd; overflow:auto;
+      background: #fafafa;
+    }
+    #map { flex: 1; }
+    .row { margin: 12px 0; }
+    label { font-weight: 600; display:block; margin-bottom: 6px; }
+    input[type="range"] { width: 100%; }
+    select { width:100%; padding:6px; }
+    .small { font-size: 12px; color:#444; }
+    .pill { display:inline-block; padding:2px 8px; border-radius: 999px; background:#eee; font-size: 12px; }
+    .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+    .toggle { display:flex; gap:10px; align-items:center; }
+    .toggle input { transform: scale(1.1); }
+    .subrow { margin-top:6px; padding-left: 10px; border-left: 3px solid #e6e6e6; }
+    .disabled { opacity: .45; pointer-events: none; }
+  </style>
+</head>
+
+<body>
+<div id="wrap">
+  <div id="sidebar">
+    <h2 style="margin:0 0 8px 0;">Mapa (Score compuesto)</h2>
+    <div class="small">Heatmap + clusters + filtros por Zona/Batería. Podés activar/desactivar Score y Cortes.</div>
+
+    <div class="row">
+      <label>Score por ponderaciones</label>
+      <div class="toggle">
+        <input id="useScore" type="checkbox" checked />
+        <div class="small">Usar Score (ponderaciones) para intensidades del heatmap</div>
+      </div>
+
+      <div id="scorePanel" class="subrow">
+        <div class="small">Ponderaciones (suman 100%)</div>
+
+        <div class="row">
+          <span class="pill">Parafina</span>
+          <input id="wPar" type="range" min="0" max="100" value="50"/>
+          <div class="small">w1: <span id="wParVal">50</span>%</div>
+        </div>
+
+        <div class="row">
+          <span class="pill">Asfaltenos</span>
+          <input id="wAsf" type="range" min="0" max="100" value="30"/>
+          <div class="small">w2: <span id="wAsfVal">30</span>%</div>
+        </div>
+
+        <div class="row">
+          <span class="pill">Punto Escu (°C)</span>
+          <input id="wPto" type="range" min="0" max="100" value="20"/>
+          <div class="small">w3: <span id="wPtoVal">20</span>%</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <label>Filtros</label>
+      <div class="row">
+        <div class="small">Zona</div>
+        <select id="zonaSel"></select>
+      </div>
+      <div class="row">
+        <div class="small">Batería</div>
+        <select id="batSel"></select>
+      </div>
+    </div>
+
+    <div class="row">
+      <label>Cortes mínimos (≥ valor)</label>
+      <div class="toggle">
+        <input id="useCuts" type="checkbox" checked />
+        <div class="small">Usar Cortes mínimos para filtrar pozos</div>
+      </div>
+      <div class="small">Rangos se auto-ajustan según min/máx reales del dataset.</div>
+
+      <div id="cutsPanel" class="subrow">
+
+        <div class="row">
+          <div class="toggle">
+            <input id="cutParOn" type="checkbox" checked />
+            <div class="small"><b>Parafina</b> (activar corte)</div>
+          </div>
+          <input id="minPar" type="range" min="0" max="100" value="0"/>
+          <div class="small"><span id="minParVal">0</span> <span class="mono" id="minParRange"></span></div>
+        </div>
+
+        <div class="row">
+          <div class="toggle">
+            <input id="cutAsfOn" type="checkbox" checked />
+            <div class="small"><b>Asfaltenos</b> (activar corte)</div>
+          </div>
+          <input id="minAsf" type="range" min="0" max="100" value="0"/>
+          <div class="small"><span id="minAsfVal">0</span> <span class="mono" id="minAsfRange"></span></div>
+        </div>
+
+        <div class="row">
+          <div class="toggle">
+            <input id="cutPtoOn" type="checkbox" checked />
+            <div class="small"><b>Punto Escu</b> (activar corte)</div>
+          </div>
+          <input id="minPto" type="range" min="-20" max="80" value="-20"/>
+          <div class="small"><span id="minPtoVal">-20</span> <span class="mono" id="minPtoRange"></span></div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="row">
+      <label>Parámetros del heatmap</label>
+      <div class="row">
+        <div class="small">Radio</div>
+        <input id="radius" type="range" min="5" max="50" value="18"/>
+        <div class="small"><span id="radiusVal">18</span></div>
+      </div>
+      <div class="row">
+        <div class="small">Blur</div>
+        <input id="blur" type="range" min="5" max="60" value="22"/>
+        <div class="small"><span id="blurVal">22</span> <span class="small">(suavizado)</span></div>
+      </div>
+    </div>
+
+    <div class="row">
+      <label>Estado</label>
+      <div class="small">Pozos visibles: <b><span id="nVisible">0</span></b></div>
+    </div>
+  </div>
+
+  <div id="map"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet.heat/dist/leaflet-heat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+<script>
+let DATA = [{"POZO":"BB-100","LAT":-46.42428412,"LON":-68.448979,"ZONA":"","BATERIA":"BB 03","PARAFINA":16.9,"ASFALTENO":1.09,"PUNTO":-20.0,"FECHA":"2021-01-15"},{"POZO":"BB-127","LAT":-46.39141261,"LON":-68.46005904,"ZONA":"","BATERIA":"BB 03","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2022-09-29"},{"POZO":"BB-20","LAT":-46.38658276,"LON":-68.47609236,"ZONA":"","BATERIA":"BB 03","PARAFINA":16.08,"ASFALTENO":9.95,"PUNTO":-25.0,"FECHA":"2020-09-30"},{"POZO":"BB-80","LAT":-46.41946462,"LON":-68.46621557,"ZONA":"","BATERIA":"BB 02","PARAFINA":8.9,"ASFALTENO":7.6,"PUNTO":-6.0,"FECHA":"2022-11-01"},{"POZO":"BB-97","LAT":-46.40923354,"LON":-68.47655453,"ZONA":"","BATERIA":"CE 15","PARAFINA":8.3,"ASFALTENO":7.5,"PUNTO":-21.0,"FECHA":"2022-07-27"},{"POZO":"BB.a-32","LAT":-46.42177908,"LON":-68.45917707,"ZONA":"","BATERIA":"BB 02","PARAFINA":21.7,"ASFALTENO":8.3,"PUNTO":-12.0,"FECHA":"2022-10-17"},{"POZO":"CG-100","LAT":-46.48561008,"LON":-68.74803119,"ZONA":"","BATERIA":"CG 04","PARAFINA":5.7,"ASFALTENO":6.08,"PUNTO":-25.0,"FECHA":"2021-11-08"},{"POZO":"CG-11","LAT":-46.46449189,"LON":-68.99941926,"ZONA":"","BATERIA":"CG 11","PARAFINA":9.6,"ASFALTENO":16.7,"PUNTO":-3.0,"FECHA":"2023-08-09"},{"POZO":"CG-110","LAT":-46.47515944,"LON":-68.74693188,"ZONA":"","BATERIA":"CG 03","PARAFINA":6.6,"ASFALTENO":12.9,"PUNTO":-3.0,"FECHA":"2023-06-07"},{"POZO":"CG-113","LAT":-46.49272129,"LON":-68.74558422,"ZONA":"","BATERIA":"CE 02","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2022-11-22"},{"POZO":"CG-179","LAT":-46.47067252,"LON":-68.86421765,"ZONA":"","BATERIA":"CG 05","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2024-10-25"},{"POZO":"CG-19","LAT":-46.50163802,"LON":-68.93814708,"ZONA":"","BATERIA":"CG 19","PARAFINA":10.8,"ASFALTENO":8.2,"PUNTO":9.0,"FECHA":"2024-05-14"},{"POZO":"CG-200","LAT":-46.33189295,"LON":-68.76885042,"ZONA":"","BATERIA":"CG 05","PARAFINA":4.87,"ASFALTENO":19.4,"PUNTO":-5.0,"FECHA":"2020-07-16"},{"POZO":"CG-231","LAT":-46.40351649,"LON":-68.9947254,"ZONA":"","BATERIA":"CG 10","PARAFINA":18.3,"ASFALTENO":11.3,"PUNTO":-3.0,"FECHA":"2023-05-31"},{"POZO":"CG-247","LAT":-46.40252451,"LON":-68.97593477,"ZONA":"","BATERIA":"CG 10","PARAFINA":10.4,"ASFALTENO":18.7,"PUNTO":9.0,"FECHA":"2023-09-29"},{"POZO":"CG-285","LAT":-46.47456437,"LON":-68.84724146,"ZONA":"","BATERIA":"CG 05","PARAFINA":11.2,"ASFALTENO":13.6,"PUNTO":-9.0,"FECHA":"2024-10-25"},{"POZO":"CG-305","LAT":-46.411193,"LON":-68.96207955,"ZONA":"","BATERIA":"CG 08","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2023-05-31"},{"POZO":"CG-390","LAT":-46.48022209,"LON":-68.8000713,"ZONA":"","BATERIA":"CG 19","PARAFINA":7.5,"ASFALTENO":5.7,"PUNTO":6.0,"FECHA":"2021-05-28"},{"POZO":"CG-400","LAT":-46.49138973,"LON":-68.9936749,"ZONA":"","BATERIA":"CG 10","PARAFINA":12.31,"ASFALTENO":18.4,"PUNTO":-6.0,"FECHA":"2021-04-06"},{"POZO":"CG-457","LAT":-46.43509545,"LON":-68.79009103,"ZONA":"","BATERIA":"CG 18","PARAFINA":13.2,"ASFALTENO":17.5,"PUNTO":6.0,"FECHA":"2023-07-28"},{"POZO":"CG-500","LAT":-46.4971358,"LON":-68.9486677,"ZONA":"","BATERIA":"CG 02","PARAFINA":7.7,"ASFALTENO":3.8,"PUNTO":-9.0,"FECHA":"2020-01-10"},{"POZO":"CG-550","LAT":-46.49040989,"LON":-68.8796356,"ZONA":"","BATERIA":"CG 12","PARAFINA":22.3,"ASFALTENO":20.6,"PUNTO":15.0,"FECHA":"2023-01-09"},{"POZO":"CG-594","LAT":-46.4912744,"LON":-68.88222569,"ZONA":"","BATERIA":"CG 22","PARAFINA":8.3,"ASFALTENO":12.9,"PUNTO":-3.0,"FECHA":"2023-05-04"},{"POZO":"CG-608","LAT":-46.43984674,"LON":-68.80457313,"ZONA":"","BATERIA":"CG 17","PARAFINA":8.1,"ASFALTENO":13.1,"PUNTO":-12.0,"FECHA":"2023-07-28"},{"POZO":"CG-636","LAT":-46.49149852,"LON":-68.89031226,"ZONA":"","BATERIA":"CG 22","PARAFINA":8.3,"ASFALTENO":10.2,"PUNTO":6.0,"FECHA":"2024-02-20"},{"POZO":"CG-673","LAT":-46.4979911,"LON":-68.86424945,"ZONA":"","BATERIA":"CG 12","PARAFINA":13.8,"ASFALTENO":4.5,"PUNTO":12.0,"FECHA":"2023-10-09"},{"POZO":"CG-682","LAT":-46.47105957,"LON":-68.88201137,"ZONA":"","BATERIA":"CG 23","PARAFINA":8.7,"ASFALTENO":17.2,"PUNTO":15.0,"FECHA":"2023-11-07"},{"POZO":"CG-714","LAT":-46.4835308,"LON":-68.88341293,"ZONA":"","BATERIA":"CG 23","PARAFINA":8.0,"ASFALTENO":14.5,"PUNTO":-6.0,"FECHA":"2025-06-26"},{"POZO":"CG-748","LAT":-46.49338759,"LON":-68.88571199,"ZONA":"","BATERIA":"CG 22","PARAFINA":5.2,"ASFALTENO":11.9,"PUNTO":6.0,"FECHA":"2023-07-07"},{"POZO":"CG-786","LAT":-46.46401446,"LON":-68.86811726,"ZONA":"","BATERIA":"CG 05","PARAFINA":9.1,"ASFALTENO":13.7,"PUNTO":-21.0,"FECHA":"2024-10-25"},{"POZO":"CG-822","LAT":-46.45812969,"LON":-68.82177855,"ZONA":"","BATERIA":"CG 05","PARAFINA":9.5,"ASFALTENO":18.4,"PUNTO":18.0,"FECHA":"2023-11-07"},{"POZO":"CG-826","LAT":-46.49103695,"LON":-68.858099,"ZONA":"","BATERIA":"CG 12","PARAFINA":4.6,"ASFALTENO":15.1,"PUNTO":9.0,"FECHA":"2023-10-05"},{"POZO":"CG-839","LAT":-46.486316,"LON":-68.99369293,"ZONA":"","BATERIA":"CG 19","PARAFINA":15.0,"ASFALTENO":11.2,"PUNTO":0.0,"FECHA":"2024-05-14"},{"POZO":"CG-859(d)","LAT":-46.46405576,"LON":-68.8685896,"ZONA":"","BATERIA":"CG 05","PARAFINA":6.31,"ASFALTENO":17.2,"PUNTO":3.0,"FECHA":"2020-12-30"},{"POZO":"CG-869","LAT":-46.39924581,"LON":-68.829074,"ZONA":"","BATERIA":"CG 11","PARAFINA":8.8,"ASFALTENO":17.6,"PUNTO":3.0,"FECHA":"2023-11-14"},{"POZO":"CG-870","LAT":-46.42650576,"LON":-68.85189766,"ZONA":"","BATERIA":"CG 06","PARAFINA":6.8,"ASFALTENO":8.5,"PUNTO":18.0,"FECHA":"2023-06-29"},{"POZO":"CG-895","LAT":-46.48901642,"LON":-68.76550811,"ZONA":"","BATERIA":"CG 04","PARAFINA":6.7,"ASFALTENO":9.4,"PUNTO":12.0,"FECHA":"2024-09-19"},{"POZO":"CG-975","LAT":-46.49850478,"LON":-68.99839758,"ZONA":"","BATERIA":"CG 01","PARAFINA":10.6,"ASFALTENO":5.4,"PUNTO":-12.0,"FECHA":"2022-05-26"},{"POZO":"CG-981","LAT":-46.48000919,"LON":-68.99112172,"ZONA":"","BATERIA":"CG 19","PARAFINA":14.3,"ASFALTENO":4.8,"PUNTO":-3.0,"FECHA":"2023-06-27"},{"POZO":"CG-983","LAT":-46.47893733,"LON":-68.98819439,"ZONA":"","BATERIA":"CG 01","PARAFINA":15.8,"ASFALTENO":8.3,"PUNTO":-9.0,"FECHA":"2024-12-23"},{"POZO":"CG-985","LAT":-46.49199267,"LON":-68.99706814,"ZONA":"","BATERIA":"CG 19","PARAFINA":10.3,"ASFALTENO":7.1,"PUNTO":6.0,"FECHA":"2024-01-17"},{"POZO":"CG.a-8","LAT":-46.50285071,"LON":-69.00313179,"ZONA":"","BATERIA":"CG 01","PARAFINA":15.5209887066,"ASFALTENO":10.941108545,"PUNTO":-3.0,"FECHA":"2022-03-31"},{"POZO":"CG.xp-910","LAT":-46.41483029,"LON":-68.73588612,"ZONA":"","BATERIA":"CE 06","PARAFINA":11.28,"ASFALTENO":4.49,"PUNTO":3.0,"FECHA":"2022-06-03"},{"POZO":"CnE-100","LAT":-46.49291025,"LON":-68.73289912,"ZONA":"","BATERIA":"CE 13","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2021-01-14"},{"POZO":"CnE-1000","LAT":-46.48734082,"LON":-68.67724612,"ZONA":"","BATERIA":"nan","PARAFINA":8.2,"ASFALTENO":13.67,"PUNTO":19.0,"FECHA":"2021-12-09"},{"POZO":"CnE-1024","LAT":-46.5012918,"LON":-68.69391368,"ZONA":"","BATERIA":"CE 07","PARAFINA":7.3,"ASFALTENO":23.0,"PUNTO":21.0,"FECHA":"2023-11-14"},{"POZO":"CnE-105","LAT":-46.49892199,"LON":-68.73452215,"ZONA":"","BATERIA":"CE 02","PARAFINA":6.2,"ASFALTENO":17.6,"PUNTO":21.0,"FECHA":"2023-10-20"},{"POZO":"CnE-1052","LAT":-46.48669214,"LON":-68.65411229,"ZONA":"","BATERIA":"CE 27","PARAFINA":14.6,"ASFALTENO":27.4,"PUNTO":18.0,"FECHA":"2023-07-06"},{"POZO":"CnE-1059","LAT":-46.44570791,"LON":-68.7456759,"ZONA":"","BATERIA":"CE 06","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2022-05-26"},{"POZO":"CnE-106","LAT":-46.49578048,"LON":-68.73509079,"ZONA":"","BATERIA":"CE 02","PARAFINA":17.7,"ASFALTENO":58.6,"PUNTO":18.0,"FECHA":"2023-05-29"},{"POZO":"CnE-1100","LAT":-46.45207969,"LON":-68.72992685,"ZONA":"","BATERIA":"CE 27","PARAFINA":6.14,"ASFALTENO":21.14,"PUNTO":12.0,"FECHA":"2021-09-17"},{"POZO":"CnE-1102","LAT":-46.48827157,"LON":-68.63854281,"ZONA":"","BATERIA":"CE 27","PARAFINA":6.8,"ASFALTENO":26.4,"PUNTO":24.0,"FECHA":"2024-02-20"},{"POZO":"CnE-1103","LAT":-46.50131954,"LON":-68.66003342,"ZONA":"","BATERIA":"CE 27","PARAFINA":9.8,"ASFALTENO":24.68,"PUNTO":18.0,"FECHA":"2024-05-28"},{"POZO":"CnE-1113","LAT":-46.48794893,"LON":-68.63095321,"ZONA":"","BATERIA":"CE 27","PARAFINA":5.2,"ASFALTENO":21.2,"PUNTO":18.0,"FECHA":"2023-10-17"},{"POZO":"CnE-1134","LAT":-46.38642506,"LON":-68.57489361,"ZONA":"","BATERIA":"CE 23","PARAFINA":27.0,"ASFALTENO":3.7,"PUNTO":-12.0,"FECHA":"2022-10-05"},{"POZO":"CnE-1153","LAT":-46.49752764,"LON":-68.49945894,"ZONA":"","BATERIA":"CE 11","PARAFINA":8.3,"ASFALTENO":18.4,"PUNTO":21.0,"FECHA":"2024-10-18"},{"POZO":"CnE-1159","LAT":-46.42682355,"LON":-68.56312484,"ZONA":"","BATERIA":"CE 20","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2022-02-04"},{"POZO":"CnE-1176","LAT":-46.4062442,"LON":-68.57299378,"ZONA":"","BATERIA":"CE 20","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2022-07-18"},{"POZO":"CnE-1187","LAT":-46.38622849,"LON":-68.57873264,"ZONA":"","BATERIA":"CE 23","PARAFINA":12.4,"ASFALTENO":4.5,"PUNTO":-12.0,"FECHA":"2022-10-05"},{"POZO":"CnE-1200(d)","LAT":-46.37641757,"LON":-68.60245586,"ZONA":"","BATERIA":"CE 22","PARAFINA":11.61,"ASFALTENO":17.18,"PUNTO":-18.0,"FECHA":"2021-04-08"},{"POZO":"CnE-1203","LAT":-46.48131912,"LON":-68.71231847,"ZONA":"","BATERIA":"CE 03","PARAFINA":11.5,"ASFALTENO":27.5,"PUNTO":15.0,"FECHA":"2023-10-31"},{"POZO":"CnE-1206","LAT":-46.4884092,"LON":-68.6559566,"ZONA":"","BATERIA":"CE 27","PARAFINA":18.2,"ASFALTENO":21.0,"PUNTO":12.0,"FECHA":"2023-11-21"},{"POZO":"CnE-1219","LAT":-46.49608709,"LON":-68.62711064,"ZONA":"","BATERIA":"CE 27","PARAFINA":14.5,"ASFALTENO":19.5,"PUNTO":18.0,"FECHA":"2023-10-31"},{"POZO":"CnE-1225","LAT":-46.48611199,"LON":-68.62222843,"ZONA":"","BATERIA":"CE 27","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2023-10-20"},{"POZO":"CnE-1230","LAT":-46.43793822,"LON":-68.57521485,"ZONA":"","BATERIA":"CE 03","PARAFINA":17.2,"ASFALTENO":1.6,"PUNTO":13.0,"FECHA":"2020-01-22"},{"POZO":"CnE-1257","LAT":-46.49849857,"LON":-68.6252988,"ZONA":"","BATERIA":"CE 27","PARAFINA":6.5,"ASFALTENO":22.8,"PUNTO":12.0,"FECHA":"2023-11-06"},{"POZO":"CnE-1260","LAT":-46.39908474,"LON":-68.62925187,"ZONA":"","BATERIA":"CE 06","PARAFINA":6.71,"ASFALTENO":3.17,"PUNTO":-7.0,"FECHA":"2020-07-22"},{"POZO":"CnE-1273","LAT":-46.4802088,"LON":-68.70839714,"ZONA":"","BATERIA":"CE 03","PARAFINA":3.6,"ASFALTENO":24.9,"PUNTO":18.0,"FECHA":"2023-10-12"},{"POZO":"CnE-1278","LAT":-46.45539773,"LON":-68.72072676,"ZONA":"","BATERIA":"CE 04","PARAFINA":11.9,"ASFALTENO":20.8,"PUNTO":18.0,"FECHA":"2023-07-28"},{"POZO":"CnE-1293","LAT":-46.45168486,"LON":-68.71983347,"ZONA":"","BATERIA":"CE 06","PARAFINA":19.6,"ASFALTENO":25.9,"PUNTO":9.0,"FECHA":"2023-07-28"},{"POZO":"CnE-1300","LAT":-46.48734902,"LON":-68.53184993,"ZONA":"","BATERIA":"CE 11","PARAFINA":6.62,"ASFALTENO":11.2,"PUNTO":-15.0,"FECHA":"2022-06-13"},{"POZO":"CnE-1310(d)","LAT":-46.49897987,"LON":-68.62292276,"ZONA":"","BATERIA":"CE 27","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2023-07-06"},{"POZO":"CnE-1311","LAT":-46.49185449,"LON":-68.62507311,"ZONA":"","BATERIA":"CE 27","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2023-10-20"},{"POZO":"CnE-1326","LAT":-46.43517597,"LON":-68.66154378,"ZONA":"","BATERIA":"CE 06","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2023-03-21"},{"POZO":"CnE-133","LAT":-46.39344674,"LON":-68.57593684,"ZONA":"","BATERIA":"CE 23","PARAFINA":14.8,"ASFALTENO":7.5,"PUNTO":-9.0,"FECHA":"2022-10-05"},{"POZO":"CnE-1336","LAT":-46.46497542,"LON":-68.64457175,"ZONA":"","BATERIA":"CE 08","PARAFINA":6.9,"ASFALTENO":17.9,"PUNTO":18.0,"FECHA":"2023-10-12"},{"POZO":"CnE-1337","LAT":-46.43791497,"LON":-68.66022132,"ZONA":"","BATERIA":"CE 06","PARAFINA":11.2,"ASFALTENO":26.5,"PUNTO":-12.0,"FECHA":"2023-03-21"},{"POZO":"CnE-1349","LAT":-46.36092984,"LON":-68.60570069,"ZONA":"","BATERIA":"CE 21","PARAFINA":18.0,"ASFALTENO":5.7,"PUNTO":-9.0,"FECHA":"2022-10-25"},{"POZO":"CnE-1352","LAT":-46.49767008,"LON":-68.60501693,"ZONA":"","BATERIA":"CE 25","PARAFINA":27.4,"ASFALTENO":20.2,"PUNTO":18.0,"FECHA":"2023-03-08"},{"POZO":"CnE-1370","LAT":-46.47655702,"LON":-68.71347371,"ZONA":"","BATERIA":"CE 03","PARAFINA":10.8,"ASFALTENO":22.5,"PUNTO":18.0,"FECHA":"2023-04-20"},{"POZO":"CnE-1377","LAT":-46.48942411,"LON":-68.6450862,"ZONA":"","BATERIA":"CE 27","PARAFINA":16.4,"ASFALTENO":26.9,"PUNTO":21.0,"FECHA":"2023-07-06"},{"POZO":"CnE-1387","LAT":-46.50243077,"LON":-68.68607617,"ZONA":"","BATERIA":"CE 26","PARAFINA":5.6,"ASFALTENO":26.1,"PUNTO":21.0,"FECHA":"2023-10-17"},{"POZO":"CnE-1421","LAT":-46.43487819,"LON":-68.66547906,"ZONA":"","BATERIA":"CE 06","PARAFINA":8.7,"ASFALTENO":14.3,"PUNTO":9.0,"FECHA":"2023-03-21"},{"POZO":"CnE-1422","LAT":-46.43579606,"LON":-68.6577285,"ZONA":"","BATERIA":"CE 06","PARAFINA":12.5,"ASFALTENO":17.5,"PUNTO":3.0,"FECHA":"2023-03-21"},{"POZO":"CnE-1423","LAT":-46.4327845,"LON":-68.66310794,"ZONA":"","BATERIA":"CE 06","PARAFINA":7.9,"ASFALTENO":16.1,"PUNTO":3.0,"FECHA":"2023-03-21"},{"POZO":"CnE-1425","LAT":-46.43473506,"LON":-68.669691,"ZONA":"","BATERIA":"CE 06","PARAFINA":12.3,"ASFALTENO":13.6,"PUNTO":0.0,"FECHA":"2023-03-21"},{"POZO":"CnE-1431","LAT":-46.43765583,"LON":-68.65473664,"ZONA":"","BATERIA":"CE 06","PARAFINA":8.9,"ASFALTENO":12.5,"PUNTO":-9.0,"FECHA":"2024-01-15"},{"POZO":"CnE-1432","LAT":-46.43594906,"LON":-68.6488715,"ZONA":"","BATERIA":"CE 06","PARAFINA":11.8,"ASFALTENO":10.4,"PUNTO":-6.0,"FECHA":"2024-01-15"},{"POZO":"CnE-1433","LAT":-46.44012344,"LON":-68.66245397,"ZONA":"","BATERIA":"CE 06","PARAFINA":10.5,"ASFALTENO":14.2,"PUNTO":-6.0,"FECHA":"2024-04-05"},{"POZO":"CnE-1454","LAT":-46.47713822,"LON":-68.57082078,"ZONA":"","BATERIA":"CE 11","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2024-12-16"},{"POZO":"CnE-1457","LAT":-46.48833764,"LON":-68.52453692,"ZONA":"","BATERIA":"CE 11","PARAFINA":8.7,"ASFALTENO":16.5,"PUNTO":0.0,"FECHA":"2024-01-23"},{"POZO":"CnE-1458","LAT":-46.48266439,"LON":-68.54042436,"ZONA":"","BATERIA":"CE 10","PARAFINA":2.8,"ASFALTENO":6.9,"PUNTO":18.0,"FECHA":"2024-06-03"},{"POZO":"CnE-1463","LAT":-46.432561,"LON":-68.65914875,"ZONA":"","BATERIA":"nan","PARAFINA":21.4,"ASFALTENO":14.5,"PUNTO":6.0,"FECHA":"2025-02-05"},{"POZO":"CnE-1464","LAT":-46.43243614,"LON":-68.65537267,"ZONA":"","BATERIA":"CE 06","PARAFINA":21.8,"ASFALTENO":16.2,"PUNTO":0.0,"FECHA":"2025-02-05"},{"POZO":"CnE-151","LAT":-46.47626315,"LON":-68.71691333,"ZONA":"","BATERIA":"CE 03","PARAFINA":6.9,"ASFALTENO":20.0,"PUNTO":15.0,"FECHA":"2023-10-31"},{"POZO":"CnE-157","LAT":-46.49190358,"LON":-68.71392078,"ZONA":"","BATERIA":"CE 07","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":null},{"POZO":"CnE-200","LAT":-46.40380907,"LON":-68.54634334,"ZONA":"","BATERIA":"CE 09","PARAFINA":20.34,"ASFALTENO":20.97,"PUNTO":15.0,"FECHA":"2021-08-06"},{"POZO":"CnE-208","LAT":-46.46855994,"LON":-68.68862412,"ZONA":"","BATERIA":"CE 09","PARAFINA":7.4,"ASFALTENO":9.2,"PUNTO":-18.0,"FECHA":"2022-07-12"},{"POZO":"CnE-218","LAT":-46.46718623,"LON":-68.68133551,"ZONA":"","BATERIA":"CE 04","PARAFINA":18.8,"ASFALTENO":21.4,"PUNTO":12.0,"FECHA":"2023-07-28"},{"POZO":"CnE-244","LAT":-46.46737471,"LON":-68.70234252,"ZONA":"","BATERIA":"CE 09","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2023-02-02"},{"POZO":"CnE-247","LAT":-46.46023175,"LON":-68.70657367,"ZONA":"","BATERIA":"CE 04","PARAFINA":18.8,"ASFALTENO":18.5,"PUNTO":15.0,"FECHA":"2023-10-20"},{"POZO":"CnE-300","LAT":-46.46356889,"LON":-68.61910737,"ZONA":"","BATERIA":"CE 18","PARAFINA":11.1,"ASFALTENO":13.72,"PUNTO":-12.0,"FECHA":"2021-11-12"},{"POZO":"CnE-400","LAT":-46.46053304,"LON":-68.52932083,"ZONA":"","BATERIA":"CE 17","PARAFINA":10.75,"ASFALTENO":14.35,"PUNTO":-25.0,"FECHA":"2021-04-08"},{"POZO":"CnE-428","LAT":-46.44783518,"LON":-68.67848636,"ZONA":"","BATERIA":"CE 04","PARAFINA":13.0,"ASFALTENO":16.5,"PUNTO":3.0,"FECHA":"2022-07-12"},{"POZO":"CnE-430","LAT":-46.47020403,"LON":-68.66656655,"ZONA":"","BATERIA":"CE 08","PARAFINA":26.2,"ASFALTENO":18.3,"PUNTO":3.0,"FECHA":"2023-01-27"},{"POZO":"CnE-444","LAT":-46.4701812,"LON":-68.49431585,"ZONA":"","BATERIA":"CE 22","PARAFINA":6.4,"ASFALTENO":11.7,"PUNTO":-6.0,"FECHA":"2023-08-30"},{"POZO":"CnE-465","LAT":-46.36812824,"LON":-68.64404318,"ZONA":"","BATERIA":"CE 21","PARAFINA":11.1,"ASFALTENO":10.9,"PUNTO":0.0,"FECHA":"2023-03-30"},{"POZO":"CnE-500","LAT":-46.40057865,"LON":-68.59417402,"ZONA":"","BATERIA":"CE 02","PARAFINA":19.1,"ASFALTENO":20.17,"PUNTO":9.0,"FECHA":"2021-11-08"},{"POZO":"CnE-510","LAT":-46.40011481,"LON":-68.60097382,"ZONA":"","BATERIA":"CE 19","PARAFINA":4.2,"ASFALTENO":2.6,"PUNTO":-6.0,"FECHA":"2022-05-16"},{"POZO":"CnE-575","LAT":-46.4462475,"LON":-68.50365577,"ZONA":"","BATERIA":"CE 17","PARAFINA":11.1,"ASFALTENO":5.8,"PUNTO":-15.0,"FECHA":"2024-12-16"},{"POZO":"CnE-576","LAT":-46.41468079,"LON":-68.48987583,"ZONA":"","BATERIA":"Swabing CE","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2022-11-01"},{"POZO":"CnE-620","LAT":-46.39858701,"LON":-68.49529115,"ZONA":"","BATERIA":"CE 15","PARAFINA":12.3,"ASFALTENO":14.7,"PUNTO":15.0,"FECHA":"2023-08-24"},{"POZO":"CnE-638","LAT":-46.39094952,"LON":-68.57710939,"ZONA":"","BATERIA":"CE 23","PARAFINA":20.6,"ASFALTENO":4.5,"PUNTO":-18.0,"FECHA":"2022-10-05"},{"POZO":"CnE-660","LAT":-46.39462703,"LON":-68.53944329,"ZONA":"","BATERIA":"CE 26","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2021-01-06"},{"POZO":"CnE-678","LAT":-46.39357015,"LON":-68.60604192,"ZONA":"","BATERIA":"CE 19","PARAFINA":2.2,"ASFALTENO":6.7,"PUNTO":-21.0,"FECHA":"2022-07-18"},{"POZO":"CnE-742","LAT":-46.38205752,"LON":-68.61743644,"ZONA":"","BATERIA":"CE 21","PARAFINA":15.66,"ASFALTENO":4.6,"PUNTO":0.0,"FECHA":"2022-06-21"},{"POZO":"CnE-778","LAT":-46.41180812,"LON":-68.49759031,"ZONA":"","BATERIA":"CE 15","PARAFINA":11.2,"ASFALTENO":8.5,"PUNTO":-21.0,"FECHA":"2023-08-24"},{"POZO":"CnE-795","LAT":-46.39430372,"LON":-68.57246191,"ZONA":"","BATERIA":"CE 23","PARAFINA":17.4,"ASFALTENO":9.7,"PUNTO":-15.0,"FECHA":"2022-10-05"},{"POZO":"CnE-796","LAT":-46.37966635,"LON":-68.62214587,"ZONA":"","BATERIA":"CE 21","PARAFINA":8.2,"ASFALTENO":7.55,"PUNTO":-6.0,"FECHA":"2022-05-10"},{"POZO":"CnE-875","LAT":-46.4396345,"LON":-68.66698913,"ZONA":"","BATERIA":"CE 06","PARAFINA":3.6,"ASFALTENO":15.7,"PUNTO":21.0,"FECHA":"2023-10-17"},{"POZO":"CnE-888","LAT":-46.48499323,"LON":-68.67584772,"ZONA":"","BATERIA":"CE 26","PARAFINA":18.55,"ASFALTENO":17.75,"PUNTO":0.0,"FECHA":"2022-02-08"},{"POZO":"CnE-903","LAT":-46.43513683,"LON":-68.50413464,"ZONA":"","BATERIA":"CE 17","PARAFINA":11.2,"ASFALTENO":9.0,"PUNTO":-24.0,"FECHA":"2023-07-26"},{"POZO":"CnE-905","LAT":-46.48709252,"LON":-68.67287227,"ZONA":"","BATERIA":"CE 26","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2022-07-25"},{"POZO":"CnE-938","LAT":-46.49281623,"LON":-68.67747242,"ZONA":"","BATERIA":"CE 26","PARAFINA":14.6,"ASFALTENO":15.5,"PUNTO":12.0,"FECHA":"2023-09-11"},{"POZO":"CnE-943","LAT":-46.49148581,"LON":-68.68688965,"ZONA":"","BATERIA":"CE 26","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2023-08-14"},{"POZO":"CnE-964","LAT":-46.49358955,"LON":-68.58881833,"ZONA":"","BATERIA":"CE 25","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2023-03-17"},{"POZO":"CnE-972","LAT":-46.43956008,"LON":-68.506749,"ZONA":"","BATERIA":"CE 17","PARAFINA":5.7,"ASFALTENO":5.9,"PUNTO":-35.0,"FECHA":"2022-07-06"},{"POZO":"CnE-974","LAT":-46.44017635,"LON":-68.51436993,"ZONA":"","BATERIA":"CE 17","PARAFINA":12.0,"ASFALTENO":8.2,"PUNTO":-21.0,"FECHA":"2023-07-26"},{"POZO":"CnE-991","LAT":-46.48677761,"LON":-68.54117883,"ZONA":"","BATERIA":"CE 10","PARAFINA":16.8,"ASFALTENO":20.5,"PUNTO":21.0,"FECHA":"2025-01-21"},{"POZO":"CnE-994","LAT":-46.49710036,"LON":-68.49577839,"ZONA":"","BATERIA":"nan","PARAFINA":3.0,"ASFALTENO":12.2,"PUNTO":-24.0,"FECHA":"2024-02-28"},{"POZO":"CnE-996","LAT":-46.48402231,"LON":-68.53702306,"ZONA":"","BATERIA":"CE 11","PARAFINA":12.3,"ASFALTENO":13.6,"PUNTO":-12.0,"FECHA":"2024-05-03"},{"POZO":"CnE-998","LAT":-46.48256813,"LON":-68.68033449,"ZONA":"","BATERIA":"CE 26","PARAFINA":4.4,"ASFALTENO":24.2,"PUNTO":18.0,"FECHA":"2023-09-21"},{"POZO":"CnE.a-126","LAT":-46.45027762,"LON":-68.70231867,"ZONA":"","BATERIA":"CE 06","PARAFINA":14.0,"ASFALTENO":25.4,"PUNTO":18.0,"FECHA":"2024-09-12"},{"POZO":"CnE.a-128","LAT":-46.46187533,"LON":-68.69509187,"ZONA":"","BATERIA":"CE 04","PARAFINA":7.8,"ASFALTENO":19.3,"PUNTO":21.0,"FECHA":"2023-10-12"},{"POZO":"CnE.a-1340","LAT":-46.42110918,"LON":-68.68320554,"ZONA":"","BATERIA":"CE 08","PARAFINA":23.78,"ASFALTENO":17.86,"PUNTO":-3.0,"FECHA":"2021-03-18"},{"POZO":"CnE.a-1427","LAT":-46.43488925,"LON":-68.63196794,"ZONA":"","BATERIA":"CE 01","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2024-01-29"},{"POZO":"CnE.a-1429","LAT":-46.42239806,"LON":-68.66715325,"ZONA":"","BATERIA":"CE 06","PARAFINA":14.5,"ASFALTENO":7.9,"PUNTO":3.0,"FECHA":"2024-02-16"},{"POZO":"CnE.a-1430","LAT":-46.43881508,"LON":-68.63747917,"ZONA":"","BATERIA":"CE 01","PARAFINA":15.4,"ASFALTENO":5.9,"PUNTO":-18.0,"FECHA":"2024-05-13"},{"POZO":"CnE.a-1438","LAT":-46.42873422,"LON":-68.67050111,"ZONA":"","BATERIA":"CE 06","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2024-04-03"},{"POZO":"CnE.a-340","LAT":-46.46351077,"LON":-68.53451845,"ZONA":"","BATERIA":"CE 17","PARAFINA":15.78,"ASFALTENO":8.44,"PUNTO":-25.0,"FECHA":"2021-04-08"},{"POZO":"CnE.a-583","LAT":-46.43576719,"LON":-68.49795075,"ZONA":"","BATERIA":"CE 17","PARAFINA":12.8,"ASFALTENO":1.1,"PUNTO":-18.0,"FECHA":"2023-07-26"},{"POZO":"CnE.a-760","LAT":-46.45140972,"LON":-68.72598228,"ZONA":"","BATERIA":"CE 06","PARAFINA":7.6,"ASFALTENO":20.62,"PUNTO":15.0,"FECHA":"2022-06-06"},{"POZO":"LC-116","LAT":-46.49313442,"LON":-69.01267896,"ZONA":"","BATERIA":"Swabing CG-LC","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2023-06-01"},{"POZO":"LC-119","LAT":-46.49895386,"LON":-69.01938918,"ZONA":"","BATERIA":"CG 01","PARAFINA":5.4,"ASFALTENO":8.6,"PUNTO":6.0,"FECHA":"2024-01-19"},{"POZO":"LC-13","LAT":-46.49490295,"LON":-69.01476118,"ZONA":"","BATERIA":"CG 19","PARAFINA":10.2,"ASFALTENO":8.9,"PUNTO":3.0,"FECHA":"2023-05-09"},{"POZO":"LC-15","LAT":-46.49772811,"LON":-69.02213606,"ZONA":"","BATERIA":"Swabing LC","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2023-05-09"},{"POZO":"LC-300","LAT":-46.43357966,"LON":-69.06739085,"ZONA":"","BATERIA":"CG 19","PARAFINA":15.6,"ASFALTENO":12.2,"PUNTO":-6.0,"FECHA":"2021-05-28"},{"POZO":"LC-558","LAT":-46.39850616,"LON":-69.07709367,"ZONA":"","BATERIA":"CG 22","PARAFINA":18.15,"ASFALTENO":8.3,"PUNTO":9.0,"FECHA":"2020-11-24"},{"POZO":"LC-625","LAT":-46.49115494,"LON":-69.02394518,"ZONA":"","BATERIA":"CG 19","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2024-03-26"},{"POZO":"LC-634","LAT":-46.40190612,"LON":-69.006481,"ZONA":"","BATERIA":"CG 10","PARAFINA":10.3,"ASFALTENO":9.3,"PUNTO":3.0,"FECHA":"2023-09-19"},{"POZO":"LC-69","LAT":-46.50121161,"LON":-69.01687763,"ZONA":"","BATERIA":"CG 01","PARAFINA":12.4,"ASFALTENO":8.6,"PUNTO":3.0,"FECHA":"2023-05-04"},{"POZO":"LC-974","LAT":-46.495923,"LON":-69.01156519,"ZONA":"","BATERIA":"CG 01","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2023-05-31"},{"POZO":"LC-975","LAT":-46.49828333,"LON":-69.00766431,"ZONA":"","BATERIA":"CG 01","PARAFINA":21.6,"ASFALTENO":7.5,"PUNTO":9.0,"FECHA":"2023-05-03"},{"POZO":"LC-983","LAT":-46.479009,"LON":-69.01193131,"ZONA":"","BATERIA":"CG 19","PARAFINA":13.0,"ASFALTENO":9.8,"PUNTO":-3.0,"FECHA":"2023-07-20"},{"POZO":"LH-100","LAT":-46.51620806,"LON":-68.91904319,"ZONA":"","BATERIA":"LH 04","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2021-06-30"},{"POZO":"LH-1000","LAT":-46.59725693,"LON":-68.86683814,"ZONA":"","BATERIA":"LH 23","PARAFINA":32.4,"ASFALTENO":7.0,"PUNTO":-9.0,"FECHA":"2023-06-22"},{"POZO":"LH-1013","LAT":-46.50717554,"LON":-68.92896234,"ZONA":"","BATERIA":"LH 01","PARAFINA":11.1,"ASFALTENO":2.8,"PUNTO":-12.0,"FECHA":"2024-12-09"},{"POZO":"LH-1058","LAT":-46.63614792,"LON":-68.89493892,"ZONA":"","BATERIA":"LH 25","PARAFINA":10.9,"ASFALTENO":5.7,"PUNTO":6.0,"FECHA":"2023-05-18"},{"POZO":"LH-1100","LAT":-46.61718898,"LON":-68.92240573,"ZONA":"","BATERIA":"LH 23","PARAFINA":21.26,"ASFALTENO":8.6,"PUNTO":6.0,"FECHA":"2021-08-24"},{"POZO":"LH-1137","LAT":-46.57726433,"LON":-68.88266949,"ZONA":"","BATERIA":"LH 23","PARAFINA":9.9,"ASFALTENO":4.7,"PUNTO":-9.0,"FECHA":"2024-01-24"},{"POZO":"LH-1167","LAT":-46.51199279,"LON":-68.94369252,"ZONA":"","BATERIA":"LH 02","PARAFINA":10.2,"ASFALTENO":15.3,"PUNTO":0.0,"FECHA":"2022-06-03"},{"POZO":"LH-1200","LAT":-46.58336195,"LON":-68.86526793,"ZONA":"","BATERIA":"CG 01","PARAFINA":9.49,"ASFALTENO":11.45,"PUNTO":0.0,"FECHA":"2021-10-22"},{"POZO":"LH-1215","LAT":-46.58247672,"LON":-68.95383363,"ZONA":"","BATERIA":"LH 04","PARAFINA":17.2,"ASFALTENO":10.2,"PUNTO":-12.0,"FECHA":"2023-06-12"},{"POZO":"LH-1254","LAT":-46.52786114,"LON":-69.00115652,"ZONA":"","BATERIA":"LH 04","PARAFINA":7.6,"ASFALTENO":6.1,"PUNTO":3.0,"FECHA":"2024-10-24"},{"POZO":"LH-1267","LAT":-46.56239983,"LON":-68.89272958,"ZONA":"","BATERIA":"LH 08","PARAFINA":16.42,"ASFALTENO":6.8,"PUNTO":3.0,"FECHA":"2024-01-11"},{"POZO":"LH-1300","LAT":-46.58686861,"LON":-68.95053017,"ZONA":"","BATERIA":"LH 04","PARAFINA":13.8,"ASFALTENO":3.2,"PUNTO":6.0,"FECHA":"2023-12-28"},{"POZO":"LH-1301","LAT":-46.57199031,"LON":-69.00098708,"ZONA":"","BATERIA":"LH 04","PARAFINA":6.8,"ASFALTENO":8.2,"PUNTO":3.0,"FECHA":"2023-09-04"},{"POZO":"LH-1302","LAT":-46.57232764,"LON":-68.99827003,"ZONA":"","BATERIA":"LH 04","PARAFINA":32.2,"ASFALTENO":5.7,"PUNTO":0.0,"FECHA":"2023-02-27"},{"POZO":"LH-1303","LAT":-46.57119761,"LON":-68.99546414,"ZONA":"","BATERIA":"LH 04","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2023-04-20"},{"POZO":"LH-1304","LAT":-46.62013769,"LON":-68.91714425,"ZONA":"","BATERIA":"LH 25","PARAFINA":22.5,"ASFALTENO":5.1,"PUNTO":-3.0,"FECHA":"2023-12-11"},{"POZO":"LH-1307","LAT":-46.58264658,"LON":-68.95835542,"ZONA":"","BATERIA":"LH 04","PARAFINA":17.0,"ASFALTENO":4.7,"PUNTO":-6.0,"FECHA":"2023-12-22"},{"POZO":"LH-134","LAT":-46.50682177,"LON":-68.9430171,"ZONA":"","BATERIA":"LH 02","PARAFINA":9.5,"ASFALTENO":11.9,"PUNTO":9.0,"FECHA":"2023-03-15"},{"POZO":"LH-135","LAT":-46.54918255,"LON":-68.99466919,"ZONA":"","BATERIA":"LH 04","PARAFINA":13.5,"ASFALTENO":2.4,"PUNTO":-6.0,"FECHA":"2025-01-15"},{"POZO":"LH-142","LAT":-46.55628634,"LON":-68.995154,"ZONA":"","BATERIA":"LH 04","PARAFINA":12.4,"ASFALTENO":1.6,"PUNTO":-9.0,"FECHA":"2024-11-26"},{"POZO":"LH-148","LAT":-46.56168827,"LON":-68.99209883,"ZONA":"","BATERIA":"LH 04","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2023-09-29"},{"POZO":"LH-274","LAT":-46.50437948,"LON":-68.98842301,"ZONA":"","BATERIA":"Swabing LH","PARAFINA":23.3,"ASFALTENO":12.5,"PUNTO":-6.0,"FECHA":"2023-05-09"},{"POZO":"LH-500","LAT":-46.57431122,"LON":-68.91728702,"ZONA":"","BATERIA":"LH 04","PARAFINA":20.47,"ASFALTENO":2.86,"PUNTO":3.0,"FECHA":"2020-09-25"},{"POZO":"LH-54","LAT":-46.50385072,"LON":-68.93406039,"ZONA":"","BATERIA":"CG 20","PARAFINA":8.6,"ASFALTENO":1.0,"PUNTO":-6.0,"FECHA":"2023-08-09"},{"POZO":"LH-558","LAT":-46.5322945,"LON":-68.95483919,"ZONA":"","BATERIA":"LH 02","PARAFINA":13.8,"ASFALTENO":5.2,"PUNTO":-3.0,"FECHA":"2023-10-02"},{"POZO":"LH-596","LAT":-46.60062162,"LON":-68.87503916,"ZONA":"","BATERIA":"LH 15","PARAFINA":13.2,"ASFALTENO":5.6,"PUNTO":9.0,"FECHA":"2023-02-07"},{"POZO":"LH-600","LAT":-46.61165822,"LON":-68.87391724,"ZONA":"","BATERIA":"LH 24","PARAFINA":4.2,"ASFALTENO":3.6,"PUNTO":12.0,"FECHA":"2020-02-05"},{"POZO":"LH-604","LAT":-46.62173119,"LON":-68.89877927,"ZONA":"","BATERIA":"LH 25","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2023-02-07"},{"POZO":"LH-610","LAT":-46.60421519,"LON":-68.88782199,"ZONA":"","BATERIA":"LH 24","PARAFINA":9.42,"ASFALTENO":3.16,"PUNTO":-3.0,"FECHA":"2022-06-09"},{"POZO":"LH-675","LAT":-46.62513807,"LON":-68.86962932,"ZONA":"","BATERIA":"LH 15","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2023-02-07"},{"POZO":"LH-718","LAT":-46.61771846,"LON":-68.90873495,"ZONA":"","BATERIA":"LH 24","PARAFINA":13.5,"ASFALTENO":5.8,"PUNTO":-6.0,"FECHA":"2023-02-07"},{"POZO":"LH-800","LAT":-46.58086564,"LON":-68.92522239,"ZONA":"","BATERIA":"LH 23","PARAFINA":17.61,"ASFALTENO":3.57,"PUNTO":-6.0,"FECHA":"2021-06-08"},{"POZO":"LH-803","LAT":-46.56375879,"LON":-68.90530401,"ZONA":"","BATERIA":"LH 23","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2023-05-18"},{"POZO":"LH-831","LAT":-46.5161694,"LON":-68.96848302,"ZONA":"","BATERIA":"LH 02","PARAFINA":10.5,"ASFALTENO":15.9,"PUNTO":9.0,"FECHA":"2023-10-31"},{"POZO":"LH-900","LAT":-46.50882016,"LON":-68.94568602,"ZONA":"","BATERIA":"LH 02","PARAFINA":5.13,"ASFALTENO":6.3,"PUNTO":-12.0,"FECHA":"2022-06-03"},{"POZO":"LH-931","LAT":-46.58717617,"LON":-68.87808416,"ZONA":"","BATERIA":"LH 23","PARAFINA":18.2,"ASFALTENO":5.8,"PUNTO":-9.0,"FECHA":"2024-02-28"},{"POZO":"LH-95","LAT":-46.52251586,"LON":-69.00145172,"ZONA":"","BATERIA":"LH 04","PARAFINA":16.18,"ASFALTENO":7.25,"PUNTO":-21.0,"FECHA":"2022-05-09"},{"POZO":"LH-989","LAT":-46.63121293,"LON":-68.88929408,"ZONA":"","BATERIA":"LH 25","PARAFINA":17.12,"ASFALTENO":4.16,"PUNTO":9.0,"FECHA":"2022-05-19"},{"POZO":"LH.a-1152","LAT":-46.57541988,"LON":-68.99836664,"ZONA":"","BATERIA":"LH 04","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2023-05-04"},{"POZO":"LH.a-552","LAT":-46.60176021,"LON":-68.87153872,"ZONA":"","BATERIA":"LH 15","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2023-05-18"},{"POZO":"LH.a-872","LAT":-46.59401668,"LON":-68.87426196,"ZONA":"","BATERIA":"LH 23","PARAFINA":null,"ASFALTENO":null,"PUNTO":null,"FECHA":"2022-12-14"},{"POZO":"SCa.x-1","LAT":-46.49538626,"LON":-68.66124887,"ZONA":"","BATERIA":"CE 27","PARAFINA":9.46,"ASFALTENO":13.65,"PUNTO":18.0,"FECHA":"2022-01-27"}];
+
+let heatLayer = null;
+let clusterLayer = null;
+
+const useScore = document.getElementById("useScore");
+const scorePanel = document.getElementById("scorePanel");
+
+const wPar = document.getElementById("wPar");
+const wAsf = document.getElementById("wAsf");
+const wPto = document.getElementById("wPto");
+const wParVal = document.getElementById("wParVal");
+const wAsfVal = document.getElementById("wAsfVal");
+const wPtoVal = document.getElementById("wPtoVal");
+
+const zonaSel = document.getElementById("zonaSel");
+const batSel = document.getElementById("batSel");
+
+const useCuts = document.getElementById("useCuts");
+const cutsPanel = document.getElementById("cutsPanel");
+
+const cutParOn = document.getElementById("cutParOn");
+const cutAsfOn = document.getElementById("cutAsfOn");
+const cutPtoOn = document.getElementById("cutPtoOn");
+
+const minPar = document.getElementById("minPar");
+const minAsf = document.getElementById("minAsf");
+const minPto = document.getElementById("minPto");
+
+const minParVal = document.getElementById("minParVal");
+const minAsfVal = document.getElementById("minAsfVal");
+const minPtoVal = document.getElementById("minPtoVal");
+
+const minParRange = document.getElementById("minParRange");
+const minAsfRange = document.getElementById("minAsfRange");
+const minPtoRange = document.getElementById("minPtoRange");
+
+const radius = document.getElementById("radius");
+const blur = document.getElementById("blur");
+const radiusVal = document.getElementById("radiusVal");
+const blurVal = document.getElementById("blurVal");
+const nVisible = document.getElementById("nVisible");
+
+const map = L.map('map').setView([-46.6, -68.4], 9);
+const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 });
+const carto = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 18 });
+carto.addTo(map);
+L.control.layers({ "Carto": carto, "OSM": osm }).addTo(map);
+
+function finiteVals(arr) {
+  return arr
+    .map(x => (x === null ? null : Number(x)))
+    .filter(x => x !== null && !Number.isNaN(x) && Number.isFinite(x));
+}
+function setCutRangesFromData() {
+  const par = finiteVals(DATA.map(r => r.PARAFINA));
+  const asf = finiteVals(DATA.map(r => r.ASFALTENO));
+  const pto = finiteVals(DATA.map(r => r.PUNTO));
+
+  if (par.length) {
+    const mn = Math.min(...par), mx = Math.max(...par);
+    minPar.min = Math.floor(mn);
+    minPar.max = Math.ceil(mx);
+    if (Number(minPar.value) < Number(minPar.min)) minPar.value = minPar.min;
+    minParRange.textContent = `(rango: ${minPar.min} .. ${minPar.max})`;
+  } else minParRange.textContent = `(sin datos)`;
+
+  if (asf.length) {
+    const mn = Math.min(...asf), mx = Math.max(...asf);
+    minAsf.min = Math.floor(mn);
+    minAsf.max = Math.ceil(mx);
+    if (Number(minAsf.value) < Number(minAsf.min)) minAsf.value = minAsf.min;
+    minAsfRange.textContent = `(rango: ${minAsf.min} .. ${minAsf.max})`;
+  } else minAsfRange.textContent = `(sin datos)`;
+
+  if (pto.length) {
+    const mn = Math.min(...pto), mx = Math.max(...pto);
+    minPto.min = Math.floor(mn);
+    minPto.max = Math.ceil(mx);
+    if (Number(minPto.value) < Number(minPto.min)) minPto.value = minPto.min;
+    minPtoRange.textContent = `(rango: ${minPto.min} .. ${minPto.max})`;
+  } else minPtoRange.textContent = `(sin datos)`;
+}
+
+function minMaxNorm(values) {
+  const v = values.filter(x => x !== null && !Number.isNaN(x));
+  if (v.length === 0) return {min:0, max:1};
+  const mn = Math.min(...v), mx = Math.max(...v);
+  return {min: mn, max: (mx === mn ? mn+1e-9 : mx)};
+}
+function norm01(x, mn, mx) {
+  if (x === null || Number.isNaN(x)) return null;
+  return (x - mn) / (mx - mn);
+}
+
+function getFilters() { return { zona: zonaSel.value, bat: batSel.value }; }
+function passesFilters(row, f) {
+  const z = (row.ZONA || "").trim();
+  const b = (row.BATERIA || "").trim();
+  return ((f.zona === "TODAS") || (z === f.zona)) && ((f.bat === "TODAS") || (b === f.bat));
+}
+
+function computeScore(rows) {
+  const w1 = Number(wPar.value)/100;
+  const w2 = Number(wAsf.value)/100;
+  const w3 = Number(wPto.value)/100;
+
+  const parStats = minMaxNorm(rows.map(r => r.PARAFINA));
+  const asfStats = minMaxNorm(rows.map(r => r.ASFALTENO));
+  const ptoStats = minMaxNorm(rows.map(r => r.PUNTO));
+
+  return rows.map(r => {
+    const nPar = norm01(r.PARAFINA, parStats.min, parStats.max);
+    const nAsf = norm01(r.ASFALTENO, asfStats.min, asfStats.max);
+    const nPto = norm01(r.PUNTO, ptoStats.min, ptoStats.max);
+
+    let num = 0, den = 0;
+    if (nPar !== null) { num += w1*nPar; den += w1; }
+    if (nAsf !== null) { num += w2*nAsf; den += w2; }
+    if (nPto !== null) { num += w3*nPto; den += w3; }
+
+    const score = (den > 0) ? (num/den) : null;
+    return {...r, SCORE: score};
+  });
+}
+
+function applyCuts(rows) {
+  if (!useCuts.checked) return rows;
+
+  const cPar = Number(minPar.value);
+  const cAsf = Number(minAsf.value);
+  const cPto = Number(minPto.value);
+
+  return rows.filter(r => {
+    const par = (r.PARAFINA === null || Number.isNaN(r.PARAFINA)) ? null : Number(r.PARAFINA);
+    const asf = (r.ASFALTENO === null || Number.isNaN(r.ASFALTENO)) ? null : Number(r.ASFALTENO);
+    const pto = (r.PUNTO === null || Number.isNaN(r.PUNTO)) ? null : Number(r.PUNTO);
+
+    const okPar = (!cutParOn.checked) || (par !== null && par >= cPar);
+    const okAsf = (!cutAsfOn.checked) || (asf !== null && asf >= cAsf);
+    const okPto = (!cutPtoOn.checked) || (pto !== null && pto >= cPto);
+
+    return okPar && okAsf && okPto;
+  });
+}
+
+function rebuildLayers() {
+  const f = getFilters();
+  let visible = DATA.filter(r => passesFilters(r, f));
+  visible = applyCuts(visible);
+
+  let scored = visible;
+  if (useScore.checked) {
+    scored = computeScore(visible).filter(r => r.SCORE !== null);
+  } else {
+    scored = visible.map(r => ({...r, SCORE: null}));
+  }
+
+  nVisible.textContent = scored.length;
+
+  const heatData = scored.map(r => [r.LAT, r.LON, useScore.checked ? r.SCORE : 1.0]);
+
+  if (heatLayer) map.removeLayer(heatLayer);
+  if (clusterLayer) map.removeLayer(clusterLayer);
+
+  heatLayer = L.heatLayer(heatData, {
+    radius: Number(radius.value),
+    blur: Number(blur.value),
+    maxZoom: 12
+  }).addTo(map);
+
+  clusterLayer = L.markerClusterGroup();
+
+  scored.forEach(r => {
+    const m = L.circleMarker([r.LAT, r.LON], {radius:4});
+
+    const scoreTxt = (useScore.checked && r.SCORE !== null) ? (r.SCORE*100).toFixed(1) : "N/A";
+    const htmlTip = `
+      <div style="font-size:12px; line-height:1.25;">
+        <b>${r.POZO}</b><br/>
+        <b>Score:</b> ${scoreTxt}<br/>
+        <b>Parafina:</b> ${r.PARAFINA ?? ""}<br/>
+        <b>Asfalteno:</b> ${r.ASFALTENO ?? ""}<br/>
+        <b>Punto:</b> ${r.PUNTO ?? ""}<br/>
+        <b>Fecha:</b> ${r.FECHA ?? ""}
+      </div>
+    `;
+
+    // ✅ Hover
+    m.bindTooltip(htmlTip, {
+      direction: "top",
+      sticky: true,
+      opacity: 0.95
+    });
+
+    // (Opcional) click también:
+    m.bindPopup(htmlTip); // <- si querés SOLO hover, borrá esta línea
+
+    clusterLayer.addLayer(m);
+  });
+
+  map.addLayer(clusterLayer);
+
+  if (scored.length > 0) {
+    const bounds = L.latLngBounds(scored.map(r => [r.LAT, r.LON]));
+    map.fitBounds(bounds, { padding: [20,20] });
+  }
+}
+
+function clampWeights(changed) {
+  const sum = Number(wPar.value)+Number(wAsf.value)+Number(wPto.value);
+  if (sum === 100) return;
+
+  const rest = 100 - Number(changed.value);
+  const others = [wPar, wAsf, wPto].filter(x => x !== changed);
+  const o1 = Number(others[0].value), o2 = Number(others[1].value);
+  const oSum = o1+o2;
+
+  if (oSum <= 0) {
+    others[0].value = Math.floor(rest/2);
+    others[1].value = rest - Number(others[0].value);
+  } else {
+    others[0].value = Math.round(rest * (o1/oSum));
+    others[1].value = rest - Number(others[0].value);
+  }
+}
+
+function syncLabels() {
+  wParVal.textContent = wPar.value;
+  wAsfVal.textContent = wAsf.value;
+  wPtoVal.textContent = wPto.value;
+
+  minParVal.textContent = minPar.value;
+  minAsfVal.textContent = minAsf.value;
+  minPtoVal.textContent = minPto.value;
+
+  radiusVal.textContent = radius.value;
+  blurVal.textContent = blur.value;
+
+  scorePanel.classList.toggle("disabled", !useScore.checked);
+  cutsPanel.classList.toggle("disabled", !useCuts.checked);
+}
+
+function initFilters() {
+  const zonas = Array.from(new Set(DATA.map(r => (r.ZONA||"").trim()).filter(x => x))).sort();
+  const bats  = Array.from(new Set(DATA.map(r => (r.BATERIA||"").trim()).filter(x => x))).sort();
+  zonaSel.innerHTML = `<option value="TODAS">TODAS</option>` + zonas.map(z => `<option value="${z}">${z}</option>`).join("");
+  batSel.innerHTML  = `<option value="TODAS">TODAS</option>` + bats.map(b => `<option value="${b}">${b}</option>`).join("");
+
+  setCutRangesFromData();
+
+  if (DATA.length > 0) {
+    const lat = DATA.reduce((s,r)=>s+r.LAT,0)/DATA.length;
+    const lon = DATA.reduce((s,r)=>s+r.LON,0)/DATA.length;
+    map.setView([lat, lon], 9);
+  }
+}
+
+// listeners
+useScore.addEventListener("change", () => { syncLabels(); rebuildLayers(); });
+useCuts.addEventListener("change", () => { syncLabels(); rebuildLayers(); });
+
+[wPar, wAsf, wPto].forEach(sl => sl.addEventListener("input", () => { clampWeights(sl); syncLabels(); rebuildLayers(); }));
+[zonaSel, batSel].forEach(sel => sel.addEventListener("change", rebuildLayers));
+[radius, blur].forEach(sl => sl.addEventListener("input", () => { syncLabels(); rebuildLayers(); }));
+[cutParOn, cutAsfOn, cutPtoOn].forEach(chk => chk.addEventListener("change", () => { syncLabels(); rebuildLayers(); }));
+[minPar, minAsf, minPto].forEach(sl => sl.addEventListener("input", () => { syncLabels(); rebuildLayers(); }));
+
+syncLabels();
+initFilters();
+rebuildLayers();
+</script>
+</body>
+</html>
