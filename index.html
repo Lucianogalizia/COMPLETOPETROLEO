@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
   <title>Mapa Score (Embed)</title>
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
@@ -10,14 +10,22 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
 
   <style>
+    :root { --sidebar-w: 380px; }
+    html, body { height: 100%; }
     body { margin:0; font-family: Arial, sans-serif; }
-    #wrap { display:flex; height:100vh; }
+
+    /* Desktop */
+    #wrap { display:flex; height:100vh; height: 100dvh; }
     #sidebar {
-      width: 380px; padding: 14px; box-sizing: border-box;
-      border-right: 1px solid #ddd; overflow:auto;
+      width: var(--sidebar-w);
+      padding: 14px;
+      box-sizing: border-box;
+      border-right: 1px solid #ddd;
+      overflow:auto;
       background: #fafafa;
+      -webkit-overflow-scrolling: touch;
     }
-    #map { flex: 1; }
+    #map { flex: 1; min-width: 0; } /* min-width:0 evita bugs flex */
     .row { margin: 12px 0; }
     label { font-weight: 600; display:block; margin-bottom: 6px; }
     input[type="range"] { width: 100%; }
@@ -29,6 +37,29 @@
     .toggle input { transform: scale(1.1); }
     .subrow { margin-top:6px; padding-left: 10px; border-left: 3px solid #e6e6e6; }
     .disabled { opacity: .45; pointer-events: none; }
+
+    /* Tooltip un toque más legible */
+    .leaflet-tooltip {
+      border: 1px solid rgba(0,0,0,.15);
+      box-shadow: 0 2px 10px rgba(0,0,0,.08);
+    }
+
+    /* ✅ Mobile: apilado (filtros arriba, mapa abajo con altura real) */
+    @media (max-width: 900px) {
+      #wrap { flex-direction: column; height: 100vh; height: 100dvh; }
+      #sidebar {
+        width: 100%;
+        border-right: 0;
+        border-bottom: 1px solid #ddd;
+        max-height: 45vh;
+        max-height: 45dvh;
+      }
+      #map {
+        width: 100%;
+        height: 55vh;   /* clave: el mapa necesita un alto */
+        height: 55dvh;
+      }
+    }
   </style>
 </head>
 
@@ -89,7 +120,6 @@
       <div class="small">Rangos se auto-ajustan según min/máx reales del dataset.</div>
 
       <div id="cutsPanel" class="subrow">
-
         <div class="row">
           <div class="toggle">
             <input id="cutParOn" type="checkbox" checked />
@@ -116,7 +146,6 @@
           <input id="minPto" type="range" min="-20" max="80" value="-20"/>
           <div class="small"><span id="minPtoVal">-20</span> <span class="mono" id="minPtoRange"></span></div>
         </div>
-
       </div>
     </div>
 
@@ -137,6 +166,10 @@
     <div class="row">
       <label>Estado</label>
       <div class="small">Pozos visibles: <b><span id="nVisible">0</span></b></div>
+    </div>
+
+    <div class="small" style="margin-top:8px; color:#666;">
+      Tip: en celu, tocá un punto para ver datos.
     </div>
   </div>
 
@@ -191,11 +224,20 @@ const radiusVal = document.getElementById("radiusVal");
 const blurVal = document.getElementById("blurVal");
 const nVisible = document.getElementById("nVisible");
 
-const map = L.map('map').setView([-46.6, -68.4], 9);
+// Base map
+const map = L.map('map', { preferCanvas: true }).setView([-46.6, -68.4], 9);
 const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 });
 const carto = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 18 });
 carto.addTo(map);
 L.control.layers({ "Carto": carto, "OSM": osm }).addTo(map);
+
+// ✅ Truco clave para mobile: recalcular tamaño luego de render/layout
+function fixMapSizeSoon() {
+  setTimeout(() => { try { map.invalidateSize(); } catch(e){} }, 200);
+  setTimeout(() => { try { map.invalidateSize(); } catch(e){} }, 800);
+}
+window.addEventListener("orientationchange", fixMapSizeSoon);
+window.addEventListener("resize", fixMapSizeSoon);
 
 function finiteVals(arr) {
   return arr
@@ -336,25 +378,25 @@ function rebuildLayers() {
       </div>
     `;
 
-    // ✅ Hover
-    m.bindTooltip(htmlTip, {
-      direction: "top",
-      sticky: true,
-      opacity: 0.95
-    });
+    // Desktop: hover. Mobile: el usuario toca y se ve igual.
+    m.bindTooltip(htmlTip, { direction:"top", sticky:true, opacity:0.95 });
 
-    // (Opcional) click también:
-    m.bindPopup(htmlTip); // <- si querés SOLO hover, borrá esta línea
+    // En celular el tooltip no siempre “hover”, entonces dejamos popup en tap.
+    m.bindPopup(htmlTip);
 
     clusterLayer.addLayer(m);
   });
 
   map.addLayer(clusterLayer);
 
+  // Ajuste vista
   if (scored.length > 0) {
     const bounds = L.latLngBounds(scored.map(r => [r.LAT, r.LON]));
     map.fitBounds(bounds, { padding: [20,20] });
   }
+
+  // ✅ mobile: asegurar que Leaflet repinte con el nuevo layout
+  fixMapSizeSoon();
 }
 
 function clampWeights(changed) {
@@ -404,6 +446,9 @@ function initFilters() {
     const lon = DATA.reduce((s,r)=>s+r.LON,0)/DATA.length;
     map.setView([lat, lon], 9);
   }
+
+  // ✅ aseguramos tamaño correcto al cargar
+  fixMapSizeSoon();
 }
 
 // listeners
