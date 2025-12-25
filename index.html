@@ -25,7 +25,7 @@
       background: #fafafa;
       -webkit-overflow-scrolling: touch;
     }
-    #map { flex: 1; min-width: 0; } /* min-width:0 evita bugs flex */
+    #map { flex: 1; min-width: 0; }
 
     .row { margin: 12px 0; }
     label { font-weight: 600; display:block; margin-bottom: 6px; }
@@ -45,7 +45,20 @@
       box-shadow: 0 2px 10px rgba(0,0,0,.08);
     }
 
-    /* ✅ Mobile: apilado (filtros arriba, mapa abajo con altura real) */
+    /* ✅ Heat canvas NO debe capturar mouse/touch */
+    .leaflet-heatmap-layer { pointer-events: none !important; }
+
+    /* ✅ Punto como divIcon */
+    .well-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(30,30,30,.85);
+      border: 2px solid rgba(255,255,255,.85);
+      box-shadow: 0 1px 6px rgba(0,0,0,.25);
+    }
+
+    /* ✅ Mobile */
     @media (max-width: 900px) {
       #wrap { flex-direction: column; height: 100vh; height: 100dvh; }
       #sidebar {
@@ -57,7 +70,7 @@
       }
       #map {
         width: 100%;
-        height: 55vh;   /* clave: el mapa necesita un alto */
+        height: 55vh;
         height: 55dvh;
       }
     }
@@ -224,11 +237,25 @@ const blurVal = document.getElementById("blurVal");
 const nVisible = document.getElementById("nVisible");
 
 // Base map
-const map = L.map('map', { preferCanvas: true }).setView([-46.6, -68.4], 9);
+const map = L.map('map').setView([-46.6, -68.4], 9);
+
+// ✅ panes: heat abajo, markers arriba
+map.createPane('heatPane');
+map.getPane('heatPane').style.zIndex = 250;      // debajo de markerPane (600)
+map.getPane('heatPane').style.pointerEvents = 'none';
+
 const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 });
 const carto = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 18 });
 carto.addTo(map);
 L.control.layers({ "Carto": carto, "OSM": osm }).addTo(map);
+
+// ✅ icon para pozos
+const wellIcon = L.divIcon({
+  className: "",
+  html: '<div class="well-dot"></div>',
+  iconSize: [14,14],
+  iconAnchor: [7,7]
+});
 
 // ✅ Truco clave para mobile: recalcular tamaño luego de render/layout
 function fixMapSizeSoon() {
@@ -354,18 +381,22 @@ function rebuildLayers() {
   if (heatLayer) map.removeLayer(heatLayer);
   if (clusterLayer) map.removeLayer(clusterLayer);
 
-  // ✅ FIX: faltaba agregarlo al mapa
+  // Heatmap abajo y sin eventos
   heatLayer = L.heatLayer(heatData, {
+    pane: 'heatPane',
     radius: Number(radius.value),
     blur: Number(blur.value),
     maxZoom: 12
   }).addTo(map);
 
+  // doble seguro: canvas del heat no captura eventos
+  try {
+    if (heatLayer && heatLayer._canvas) heatLayer._canvas.style.pointerEvents = 'none';
+  } catch(e){}
+
   clusterLayer = L.markerClusterGroup();
 
   scored.forEach(r => {
-    const m = L.circleMarker([r.LAT, r.LON], {radius:4});
-
     const scoreTxt = (useScore.checked && r.SCORE !== null) ? (r.SCORE*100).toFixed(1) : "N/A";
     const htmlTip = `
       <div style="font-size:12px; line-height:1.25;">
@@ -378,14 +409,13 @@ function rebuildLayers() {
       </div>
     `;
 
-    // ✅ PC: hover
-    m.bindTooltip(htmlTip, {
-      direction: "top",
-      sticky: true,
-      opacity: 0.95
-    });
+    // ✅ Marker (mejor para eventos) en vez de circleMarker
+    const m = L.marker([r.LAT, r.LON], { icon: wellIcon, riseOnHover: true });
 
-    // ✅ Celular: tap
+    // PC hover
+    m.bindTooltip(htmlTip, { direction:"top", sticky:true, opacity:0.95 });
+
+    // Celular tap
     m.bindPopup(htmlTip);
 
     clusterLayer.addLayer(m);
@@ -398,7 +428,6 @@ function rebuildLayers() {
     map.fitBounds(bounds, { padding: [20,20] });
   }
 
-  // ✅ mobile: asegurar repintado
   fixMapSizeSoon();
 }
 
